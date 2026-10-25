@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pink Kitty World 🎀</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Trebuchet MS", sans-serif;
+  background: linear-gradient(135deg,#ffd6ec,#e8d8ff,#d7f3ff);
+  color: #a23e79;
+  text-align: center;
+  min-height: 100vh;
+  padding: 18px 10px;
+}
+
+h1 {
+  margin: 8px 0;
+  font-size: clamp(25px,6vw,38px);
+  text-shadow: 2px 3px #fff;
+}
+
+.subtitle { margin: 8px; }
+
+.panel {
+  max-width: 720px;
+  margin: 15px auto;
+  padding: 14px;
+  border: 3px solid white;
+  border-radius: 25px;
+  background: #ffffffbd;
+  box-shadow: 0 8px 25px #d67cb855;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  border: 3px solid white;
+  border-radius: 18px;
+  background: #bfeaff;
+  touch-action: none;
+}
+
+button {
+  border: 2px solid white;
+  border-radius: 18px;
+  padding: 12px 19px;
+  margin: 5px;
+  background: #ff8fc5;
+  color: white;
+  font-size: 17px;
+  font-weight: bold;
+  box-shadow: 0 4px #d95b9b;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px #d95b9b;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.message {
+  min-height: 28px;
+  font-weight: bold;
+  margin: 12px 0 0;
+}
+
+.small { font-size: 13px; }
+</style>
+</head>
+
+<body>
+
+<h1>🎀 Pink Kitty World 🐱</h1>
+<p class="subtitle">Petualangan kecil di dunia permen! 🍓✨</p>
+
+<div class="panel">
+  <div class="stats">
+    <span>💗 Skor: <span id="score">0</span></span>
+    <span>🌟 Nyawa: <span id="lives">3</span></span>
+    <span>🏆 Rekor: <span id="best">0</span></span>
+  </div>
+
+  <canvas id="game" width="640" height="400"></canvas>
+
+  <div class="controls">
+    <button id="left">⬅️</button>
+    <button id="jump">🐰 LOMPAT</button>
+    <button id="right">➡️</button>
+  </div>
+
+  <button id="start">💖 MULAI GAME</button>
+  <button id="sound">🔊 Suara: OFF</button>
+
+  <div class="message" id="message">
+    Kumpulkan 10 hati dan hindari stroberi nakal! 💕
+  </div>
+  <p class="small">
+    Komputer: tombol ← → dan spasi untuk lompat.
+    HP: gunakan tombol di atas.
+  </p>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const scoreEl = document.getElementById("score");
+const livesEl = document.getElementById("lives");
+const bestEl = document.getElementById("best");
+const message = document.getElementById("message");
+
+let player, hearts, berries, score, lives;
+let running = false;
+let paused = false;
+let soundOn = false;
+let frame = 0;
+let animation;
+let keys = {};
+let held = { left: false, right: false };
+let audio;
+
+let best = 0;
+try {
+  best = Number(localStorage.getItem("pinkKittyBest")) || 0;
+} catch(e) {}
+bestEl.textContent = best;
+
+function reset() {
+  player = {
+    x: 65, y: 305, w: 42, h: 48,
+    vx: 0, vy: 0, ground: true
+  };
+
+  hearts = [];
+  berries = [];
+  score = 0;
+  lives = 3;
+  frame = 0;
+
+  scoreEl.textContent = score;
+  livesEl.textContent = lives;
+
+  for (let i = 0; i < 5; i++) {
+    hearts.push({
+      x: 130 + i * 110,
+      y: 180 + Math.random() * 100,
+      got: false
+    });
+  }
+
+  berries = [
+    { x: 350, y: 352, speed: 2 },
+    { x: 570, y: 352, speed: 2.6 }
+  ];
+}
+
+function roundedRect(x,y,w,h,r,color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(x,y,w,h,r);
+  ctx.fill();
+}
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0,0,0,400);
+  g.addColorStop(0,"#a8e4ff");
+  g.addColorStop(1,"#ffe0f1");
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,640,400);
+
+  // Awan
+  for (let i=0;i<5;i++) {
+    let x = (i*160 - frame*0.2 % 800 + 800) % 800;
+    ctx.fillStyle = "#ffffffbb";
+    ctx.beginPath();
+    ctx.arc(x,65,24,0,Math.PI*2);
+    ctx.arc(x+25,55,30,0,Math.PI*2);
+    ctx.arc(x+52,68,23,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  // Bukit
+  ctx.fillStyle = "#f9acd5";
+  ctx.beginPath();
+  ctx.ellipse(150,385,210,95,0,Math.PI,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = "#b7e9a7";
+  ctx.beginPath();
+  ctx.ellipse(500,390,250,100,0,Math.PI,Math.PI*2);
+  ctx.fill();
+
+  // Tanah
+  ctx.fillStyle = "#9ad879";
+  ctx.fillRect(0,365,640,35);
+  ctx.fillStyle = "#ffffff";
+  for(let x=12;x<640;x+=38) {
+    ctx.font="15px sans-serif";
+    ctx.fillText("✿",x,385);
+  }
+
+  ctx.fillStyle = "#9d6a52";
+  ctx.fillRect(0,393,640,7);
+
+  // Bintang kecil
+  ctx.fillStyle = "#fff4a8";
+  for(let i=0;i<8;i++) {
+    let x=(i*91+35)%640;
+    let y=100+(i%3)*50;
+    ctx.fillText("✦",x,y);
+  }
+}
+
+function drawPlayer() {
+  let x=player.x, y=player.y;
+
+  // Bayangan
+  ctx.fillStyle="#9b75a455";
+  ctx.beginPath();
+  ctx.ellipse(x+21,365,23,5,0,0,Math.PI*2);
+  ctx.fill();
+
+  // Kaki
+  roundedRect(x+5,y+34,13,13,6,"#f5a1d0");
+  roundedRect(x+24,y+34,13,13,6,"#f5a1d0");
+
+  // Telinga
+  ctx.fillStyle="#fff5fb";
+  ctx.beginPath();
+  ctx.moveTo(x+3,y+14);
+  ctx.lineTo(x+7,y-2);
+  ctx.lineTo(x+18,y+10);
+  ctx.moveTo(x+25,y+10);
+  ctx.lineTo(x+38,y-2);
+  ctx.lineTo(x+41,y+15);
+  ctx.fill();
+
+  // Kepala kucing
+  roundedRect(x,y+4,42,34,14,"#fff8fc");
+
+  // Pipi
+  ctx.fillStyle="#ffb0d5";
+  ctx.beginPath();
+  ctx.arc(x+8,y+23,4,0,Math.PI*2);
+  ctx.arc(x+34,y+23,4,0,Math.PI*2);
+  ctx.fill();
+
+  // Mata
+  ctx.fillStyle="#69435c";
+  ctx.beginPath();
+  ctx.arc(x+13,y+18,2.5,0,Math.PI*2);
+  ctx.arc(x+29,y+18,2.5,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#ed82b7";
+  ctx.beginPath();
+  ctx.arc(x+21,y+24,2.5,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle="#a96b8d";
+  ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(x+21,y+26);
+  ctx.lineTo(x+18,y+29);
+  ctx.moveTo(x+21,y+26);
+  ctx.lineTo(x+24,y+29);
+  ctx.stroke();
+
+  // Pita
+  ctx.fillStyle="#ff70b6";
+  ctx.beginPath();
+  ctx.moveTo(x+29,y+6);
+  ctx.lineTo(x+20,y);
+  ctx.lineTo(x+22,y+10);
+  ctx.lineTo(x+30,y+11);
+  ctx.lineTo(x+37,y+3);
+  ctx.lineTo(x+35,y+13);
+  ctx.fill();
+}
+
+function drawHeart(x,y) {
+  ctx.font="29px sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText("💗",x,y);
+}
+
+function drawBerry(b) {
+  ctx.font="29px sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText("🍓",b.x,b.y+3);
+}
+
+function addHeart() {
+  hearts.push({
+    x: 70+Math.random()*490,
+    y: 170+Math.random()*140,
+    got: false
+  });
+}
+
+function hit(a,b) {
+  return a.x < b.x+b.w &&
+         a.x+a.w > b.x &&
+         a.y < b.y+b.h &&
+         a.y+a.h > b.y;
+}
+
+function beep(freq=660) {
+  if(!soundOn) return;
+  try {
+    audio = audio || new (
+      window.AudioContext || window.webkitAudioContext
+    )();
+    if(audio.state==="suspended") audio.resume();
+    const oscillator=audio.createOscillator();
+    const gain=audio.createGain();
+    oscillator.frequency.value=freq;
+    oscillator.type="sine";
+    gain.gain.value=0.06;
+    oscillator.connect(gain);
+    gain.connect(audio.destination);
+    oscillator.start();
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,audio.currentTime+0.13
+    );
+    oscillator.stop(audio.currentTime+0.14);
+  } catch(e) {}
+}
+
+function update() {
+  if(!running || paused) return;
+  frame++;
+
+  player.vx=0;
+  if(keys.ArrowLeft || keys.a || held.left) player.vx=-3.5;
+  if(keys.ArrowRight || keys.d || held.right) player.vx=3.5;
+
+  player.x+=player.vx;
+  player.x=Math.max(0,Math.min(598,player.x));
+
+  player.vy+=0.42;
+  player.y+=player.vy;
+
+  if(player.y+player.h>=365) {
+    player.y=365-player.h;
+    player.vy=0;
+    player.ground=true;
+  } else {
+    player.ground=false;
+  }
+
+  hearts.forEach(h=>{
+    if(h.got) return;
+    if(hit(player,{x:h.x-13,y:h.y-25,w:26,h:30})) {
+      h.got=true;
+      score++;
+      scoreEl.textContent=score;
+      beep(750);
+
+      if(score>=10) {
+        finish(true);
+        return;
+      }
+    }
+  });
+
+  berries.forEach(b=>{
+    b.x-=b.speed;
+    if(b.x < -25) {
+      b.x=660+Math.random()*180;
+      b.speed=2+Math.random()*1.5;
+    }
+
+    if(!b.hitCooldown &&
+       hit(player,{x:b.x-12,y:b.y-26,w:24,h:26})) {
+      b.hitCooldown=45;
+      lives--;
+      livesEl.textContent=lives;
+      player.vy=-5;
+      beep(220);
+
+      if(lives<=0) finish(false);
+    }
+    if(b.hitCooldown>0) b.hitCooldown--;
+  });
+
+  if(frame%100===0 && hearts.filter(h=>!h.got).length<4) {
+    addHeart();
+  }
+
+  draw();
+}
+
+function draw() {
+  drawBackground();
+
+  hearts.forEach(h=>{
+    if(!h.got) drawHeart(h.x,h.y);
+  });
+
+  berries.forEach(drawBerry);
+  drawPlayer();
+
+  if(!running || paused) {
+    ctx.fillStyle="#ffffffd9";
+    ctx.fillRect(65,135,510,120);
+    ctx.fillStyle="#ad4782";
+    ctx.textAlign="center";
+    ctx.font="bold 27px Trebuchet MS";
+
+    ctx.fillText(
+      paused ? "⏸️ Istirahat dulu!" :
+      (score>=10 ? "Kamu hebat! 💖" :
+      (lives<=0 ? "Game Over 🥺" : "Ready, Kitty? 🎀")),
+      320,183
+    );
+
+    ctx.font="17px Trebuchet MS";
+    ctx.fillText(
+      paused ? "Tekan lanjut untuk bermain lagi" :
+      (score>=10 ? "Semua hati berhasil dikumpulkan!" :
+      (lives<=0 ? "Yuk coba lagi, semangat!" :
+      "Tekan MULAI GAME untuk bermain!")),
+      320,218
+    );
+  }
+}
+
+function finish(win) {
+  running=false;
+  paused=false;
+  cancelAnimationFrame(animation);
+
+  if(win) {
+    message.textContent="Yeay! Kamu mengumpulkan 10 hati! 💖🎉";
+  } else {
+    message.textContent="Tidak apa-apa! Coba lagi yaa 🥺💕";
+  }
+
+  if(score>best) {
+    best=score;
+    bestEl.textContent=best;
+    try { localStorage.setItem("pinkKittyBest",best); }
+    catch(e) {}
+  }
+  draw();
+}
+
+function loop() {
+  update();
+  if(running) animation=requestAnimationFrame(loop);
+}
+
+function startGame() {
+  cancelAnimationFrame(animation);
+  reset();
+  running=true;
+  paused=false;
+  message.textContent="Ayo kumpulkan hati! 💗";
+  document.getElementById("start").textContent="🔄 ULANGI GAME";
+  loop();
+}
+
+function jump() {
+  if(running && !paused && player.ground) {
+    player.vy=-10;
+    player.ground=false;
+    beep(520);
+  }
+}
+
+document.getElementById("start").onclick=startGame;
+
+document.getElementById("sound").onclick=()=>{
+  soundOn=!soundOn;
+  document.getElementById("sound").textContent=
+    soundOn ? "🔊 Suara: ON" : "🔇 Suara: OFF";
+  if(soundOn) beep();
+};
+
+function bindHold(id,direction) {
+  const btn=document.getElementById(id);
+  const down=e=>{
+    e.preventDefault();
+    held[direction]=true;
+  };
+  const up=e=>{
+    e.preventDefault();
+    held[direction]=false;
+  };
+  btn.addEventListener("pointerdown",down);
+  btn.addEventListener("pointerup",up);
+  btn.addEventListener("pointerleave",up);
+  btn.addEventListener("pointercancel",up);
+}
+
+bindHold("left","left");
+bindHold("right","right");
+
+document.getElementById("jump").addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  jump();
+});
+
+document.addEventListener("keydown",e=>{
+  if(["ArrowLeft","ArrowRight"," "].includes(e.key)) {
+    e.preventDefault();
+  }
+  keys[e.key]=true;
+  if(e.key===" " || e.key==="ArrowUp") jump();
+});
+
+document.addEventListener("keyup",e=>{
+  keys[e.key]=false;
+});
+
+reset();
+running=false;
+draw();
+</script>
+
+</body>
+</html>
